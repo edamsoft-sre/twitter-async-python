@@ -22,9 +22,9 @@ class TwitterUser(BaseModel):
     def __hash__(self):
         return hash(id)
 
-    @staticmethod
-    def from_dict(d: dict):
-        return TwitterUser(id=d['id'], username=d['username'], name=d['name'])
+    @classmethod
+    def from_dict(cls, d: dict):
+        return cls(id=d['id'], username=d['username'], name=d['name'])
 
 
 class TwitterList(BaseModel):
@@ -34,9 +34,9 @@ class TwitterList(BaseModel):
     def __hash__(self):
         return hash(id)
 
-    @staticmethod
-    def from_dict(d: dict):
-        return TwitterList(id=d['id'], name=d['name'])
+    @classmethod
+    def from_dict(cls, d: dict):
+        return cls(id=d['id'], name=d['name'])
 
 
 class ConnectTwitter:
