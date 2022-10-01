@@ -26,6 +26,9 @@ class TwitterUser(BaseModel):
     def from_dict(cls, d: dict):
         return cls(id=d['id'], username=d['username'], name=d['name'])
 
+    def to_dict(self):
+        return {"username": self.username, "id": self.id, "name": self.name}
+
 
 class TwitterList(BaseModel):
     name: str
@@ -37,6 +40,9 @@ class TwitterList(BaseModel):
     @classmethod
     def from_dict(cls, d: dict):
         return cls(id=d['id'], name=d['name'])
+
+    def to_dict(self):
+        return { "id": self.id, "name": self.name}
 
 
 class ConnectTwitter:
@@ -72,6 +78,9 @@ class ConnectTwitter:
                          }
         )
 
+    def __call__(self):
+        return self
+
     def __del__(self):
         """ Make sure to close httpx.Client when done """
         pass
@@ -86,8 +95,9 @@ class ConnectTwitter:
     async def check_rate_limit(self, request: Request) -> None:
         limit = self.rate_limit.get_limit(url=request.url, method=request.method)
         if limit.remaining == 0:
-            s_time = max((limit.reset - time.time()), 0) + 10.0
-            self.log.debug(f"Rate limited req: {request.url}")
+            s_time = max((limit.reset - time.time()), 0) or 10.0
+            msg = f"Rate limited: {s_time}s {request.url}"
+            self.log.debug(msg)
             await asyncio.sleep(s_time)
 
     async def set_rate_limit(self, resp: Response):
@@ -124,8 +134,7 @@ class ConnectTwitter:
                 detail=response.url.path
             )
 
-    @alru_cache(maxsize=32)
-    async def get_id(self, user: str = "", fields: str = "user.fields=id") -> int:
+    async def get_id(self, user: str = "", fields: str = "user.fields=id", tries: int = 2) -> int:
         # "usernames=TwitterDev,TwitterAPI"
         # user_fields =  entities, id, location,
         # name, pinned_tweet_id, profile_image_url, protected,
@@ -135,15 +144,23 @@ class ConnectTwitter:
         try:
             resp = await self.client.get(url=url)
         except httpx.RequestError as req_exc:
+            if tries:
+                await asyncio.sleep(2)
+                resp = await self.get_id(user, fields, tries - 1)
+                return resp
             raise HTTPException(status_code=503, detail=req_exc)
         _, result = self.process_json(resp)
         return result[0]['id']
 
-    async def get_data(self, item_id: int, url: str) -> Any:
+    async def get_data(self, item_id: int, url: str, tries: int = 2) -> Any:
         results = []
         try:
             resp = await self.client.get(url=url)
         except RequestError as req_exc:
+            if tries:
+                await asyncio.sleep(1)
+                resp = await self.get_data(item_id, url, tries - 1)
+                return resp
             raise HTTPException(status_code=503, detail=req_exc)
         paginate, result = self.process_json(resp)
         if not paginate:
@@ -153,28 +170,31 @@ class ConnectTwitter:
             try:
                 resp = await self.client.get(url=url, params={'pagination_token': paginate})
             except RequestError as req_exc:
+                if tries:
+                    await asyncio.sleep(1)
+                    return await self.get_data(item_id, url, tries - 1)
                 raise HTTPException(status_code=503, detail=req_exc)
             paginate, result = self.process_json(resp)
             results.extend(result)
         return results
 
-    async def get_lists_for_id(self, item_id: int, operation: str) -> list[dict]:
+    async def build_request(self, item_id: int, operation: str) -> list[dict]:
         url = self.api + getattr(self, f"url_{operation}").format(item_id)
         res = await self.get_data(item_id=item_id, url=url)
         return res
 
     async def get_followers(self, user_id: int) -> list[TwitterUser]:
-        results = await self.get_lists_for_id(item_id=user_id, operation="followers")
+        results = await self.build_request(item_id=user_id, operation="followers")
         return list(map(TwitterUser.from_dict, results))
 
     async def get_follows(self, user_id: int) -> list[TwitterUser]:
-        results = await self.get_lists_for_id(item_id=user_id, operation="follows")
+        results = await self.build_request(item_id=user_id, operation="follows")
         return list(map(TwitterUser.from_dict, results))
 
     async def get_lists(self, user_id: int) -> list[TwitterList]:
-        results = await self.get_lists_for_id(item_id=user_id, operation="lists")
+        results = await self.build_request(item_id=user_id, operation="lists")
         return list(map(TwitterList.from_dict, results))
 
     async def get_list_members(self, list_id: int) -> list[TwitterUser]:
-        results = await self.get_lists_for_id(item_id=list_id, operation="list_members")
+        results = await self.build_request(item_id=list_id, operation="list_members")
         return list(map(TwitterUser.from_dict, results))

@@ -12,7 +12,8 @@ from collections import defaultdict
 
 import httpx
 from pydantic import BaseModel
-from urllib.parse import urlparse
+from custom_logs import start_logger
+log = start_logger("__name__")
 
 
 class PyTwitterError(Exception):
@@ -459,6 +460,7 @@ class RateLimit:
             ),
             "reset": conv_type("reset", int, headers.get("x-rate-limit-reset", 0)),
         }
+        log.debug(f"Updated remaining {headers.get('x-rate-limit-remaining', 0)} for {url}")
         self.mapping[endpoint.resource][method.upper()] = RateLimitData(**data)
 
         return self.get_limit(url=url, method=method)
