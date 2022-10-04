@@ -10,8 +10,8 @@ from httpx import Response, Request, RequestError, HTTPStatusError
 from pydantic import BaseModel
 from async_lru import alru_cache
 
-from custom_logs import start_logger
-from .rate_limit import RateLimit
+from app.custom_logs import start_logger
+from twitter_async.rate_limit import RateLimit
 
 
 class TwitterUser(BaseModel):

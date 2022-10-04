@@ -12,7 +12,7 @@ from collections import defaultdict
 
 import httpx
 from pydantic import BaseModel
-from custom_logs import start_logger
+from app.custom_logs import start_logger
 log = start_logger("__name__")
 
 
